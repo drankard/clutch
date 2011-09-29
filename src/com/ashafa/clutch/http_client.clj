@@ -30,7 +30,8 @@
             [com.ashafa.clutch.utils :as utils]) 
   (:import  (java.io IOException InputStream InputStreamReader PushbackReader)
             (java.net URL URLConnection HttpURLConnection MalformedURLException)
-            (sun.misc BASE64Encoder)))
+            (sun.misc BASE64Encoder)
+            (java.net Proxy Proxy$Type InetSocketAddress)))
 
 
 (def ^{:private true} version "0.0")
@@ -69,10 +70,31 @@
                  (IOException.
                   (str "CouchDB Response Error: " response-code " " (.getResponseMessage connection)))))))
 
-(defn- connect
+
+;; SocketAddress addr = new InetSocketAddress("socks.mydomain.com", 1080);
+;; Proxy proxy = new Proxy(Proxy.Type.SOCKS, addr);
+;; URL url = new URL("ftp://ftp.gnu.org/README");
+;; URLConnection conn = url.openConnection(proxy);
+;; prx (new Proxy (. Proxy$Type HTTP) sa)
+
+(defn open-connection [url configuration]
+  (if (:proxy configuration)    
+    (let [proxy-config (:proxy configuration)          
+          type (condp = (:type proxy-config)
+                  "HTTP" (. Proxy$Type HTTP)
+                  "SOCKS" (. Proxy$Type SOCKS)
+                  :else (. Proxy$Type DIRECT))]
+      (let [proxy-addr (InetSocketAddress. (:host proxy-config) (:port proxy-config))
+            proxy (Proxy. type proxy-addr)]
+            (. url openConnection proxy)))
+      (. url openConnection)))
+
+
+
+(defn connect
   [url method config data]
-  (let [^HttpURLConnection connection    (.openConnection (URL. url))
-        configuration (merge *configuration-defaults* config)]
+  (let [configuration (merge *configuration-defaults* config)
+        ^HttpURLConnection connection (open-connection (URL. url) configuration)]
     ; can't just use .setRequestMethod because it throws an exception on
     ; any "illegal" [sic] HTTP methods, including couchdb's COPY
     (if (:ssl config)
